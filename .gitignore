@@ -1,49 +1,74 @@
-# History files
-.Rhistory
-.Rapp.history
+# dominance_network_analysis.R
+# Script to analyze dominance networks using a simulated dataset
+# Author: Ana Melisa Fernandes (fernandesanameli@gmail.com)
 
-# Session Data files
-.RData
-.RDataTmp
+# Load required libraries
+library(igraph)
+library(Perc)
 
-# User-specific files
-.Ruserdata
+# === Load Data ===
+adj_matrix <- read.csv("data/fake_adjacency_matrix.csv", sep = ";", row.names = 1)
+wa_data <- read.csv("data/fake_weights_abundance.csv", sep = ";")
 
-# Example code in package build process
-*-Ex.R
+# Ensure names match
+rownames(adj_matrix) <- colnames(adj_matrix)
+adj_matrix <- as.matrix(adj_matrix)
 
-# Output files from R CMD build
-/*.tar.gz
+# === Create igraph object ===
+net <- graph_from_adjacency_matrix(adj_matrix, mode = "directed", weighted = TRUE)
+net <- simplify(net, remove.multiple = FALSE, remove.loops = TRUE)
 
-# Output files from R CMD check
-/*.Rcheck/
+# === Add node attributes ===
+V(net)$name <- rownames(adj_matrix)
+V(net)$Weight <- wa_data$Weight
+V(net)$Abundance <- wa_data$Abundance
+V(net)$size <- V(net)$Weight * 5
+V(net)$color <- colorRampPalette(c("lightblue", "blue"))(50)[as.numeric(cut(V(net)$Abundance, breaks = 50))]
 
-# RStudio files
-.Rproj.user/
+# === Plot the network ===
+plot(
+  net,
+  layout = layout.circle,
+  edge.curved = 0.2,
+  edge.arrow.size = 0.8,
+  edge.width = E(net)$weight / 3,
+  edge.color = colorRampPalette(c("gray", "black"))(100)[E(net)$weight],
+  vertex.label.cex = 0.8,
+  vertex.label.color = "black",
+  vertex.label.font = 2
+)
 
-# produced vignettes
-vignettes/*.html
-vignettes/*.pdf
+# === Hub and Authority Scores ===
+hs <- hub_score(net, weights = NA)$vector
+as <- authority_score(net, weights = NA)$vector
 
-# OAuth2 token, see https://github.com/hadley/httr/releases/tag/v0.3
-.httr-oauth
+par(mfrow = c(1, 2))
+plot(net, vertex.size = hs * 50, main = "Hubs")
+plot(net, vertex.size = as * 50, main = "Authorities")
 
-# knitr and R markdown default cache directories
-*_cache/
-/cache/
+# === Dominance Ranking using Perc ===
+diag(adj_matrix) <- 0
+conf_matrix <- as.conflictmat(adj_matrix, weighted = TRUE)
+dom_prob <- conductance(conf_matrix, maxLength = 6)
 
-# Temporary files created by R markdown
-*.utf8.md
-*.knit.md
+# === Plot dominance matrix ===
+plotConfmat(dom_prob$imputed.conf - conf_matrix, ordering = NA, labels = TRUE)
+plotConfmat(dom_prob$p.hat, ordering = NULL, labels = TRUE)
 
-# R Environment Variables
-.Renviron
+# Simulate rankings
+sim_result <- simRankOrder(dom_prob$p.hat)
+plotConfmat(dom_prob$p.hat, ordering = sim_result[[1]]$ID, labels = TRUE)
 
-# pkgdown site
-docs/
+# Output final ranking
+print(sim_result$BestSimulatedRankOrder)
 
-# translation temp files
-po/*~
+# === Network Metrics ===
+binary_matrix <- adj_matrix
+binary_matrix[binary_matrix > 0] <- 1
+net_pa <- graph_from_adjacency_matrix(binary_matrix, mode = "directed", weighted = NULL)
 
-# RStudio Connect folder
-rsconnect/
+cat("Density: ", edge_density(net_pa, loops = FALSE), "\\n")
+cat("Reciprocity: ", reciprocity(net_pa), "\\n")
+cat("Average Path Length: ", mean_distance(net_pa, directed = TRUE, unconnected = TRUE), "\\n")
+cat("Out-degree Centralization: ", centr_degree(net_pa, mode = "out")$centralization, "\\n")
+
